@@ -7,12 +7,13 @@ import droneIcon from "../assets/drone.png";
 mapboxgl.accessToken = "pk.eyJ1IjoibWluaHRhbjQ3MTEwMCIsImEiOiJjbWw5aHRmc2IwMzU2M2VxNGs1dGU3NHhrIn0.O4ErCdPrP5AY8oCpx0w7Rg";
 
 export default function MapView() {
-  const mapContainer = useRef(null);
-  const mapRef = useRef(null);
-  const markersRef = useRef({});
-  const { drones } = useDrones();
+  const mapContainer = useRef(null)
+  const mapRef = useRef(null)
+  const markersRef = useRef({})
+  const popupsRef = useRef({})
+  const { drones, trails } = useDrones()
 
-  // Init map
+  // init map
   useEffect(() => {
     if (mapRef.current) return;
 
@@ -26,32 +27,93 @@ export default function MapView() {
     mapRef.current.addControl(new mapboxgl.NavigationControl());
   }, []);
 
-  // Update drones
+  // update drones
   useEffect(() => {
     if (!mapRef.current) return
+    const map = mapRef.current
 
-    drones.forEach((drone) => {
-      const { id, lng, lat, heading } = drone
+    drones.forEach((d) => {
+      let marker = markersRef.current[d.id]
+      let popup = popupsRef.current[d.id]
 
-      if (!markersRef.current[id]) {
+      const popupHTML = `
+        <div style="font-size:12px">
+          <b>Drone:</b> ${d.id.slice(0, 8)}<br/>
+          Speed: ${d.speed.toFixed(1)} m/s<br/>
+          Heading: ${d.heading.toFixed(0)}°<br/>
+          Status: ${d.status}
+        </div>
+      `
+
+      if (!marker) {
         const el = document.createElement("img")
         el.src = droneIcon
         el.style.width = "32px"
         el.style.height = "32px"
-        el.style.transformOrigin = "center"
-        el.style.userSelect = "none"
+        el.style.cursor = "pointer"
 
-        markersRef.current[id] = new mapboxgl.Marker(el)
-          .setLngLat([lng, lat])
-          .addTo(mapRef.current);
+        popup = new mapboxgl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          offset: 25,
+        }).setHTML(popupHTML)
+
+        el.addEventListener("mouseenter", () => popup.addTo(map))
+        el.addEventListener("mouseleave", () => popup.remove())
+
+        marker = new mapboxgl.Marker(el)
+          .setLngLat([d.lng, d.lat])
+          .addTo(map)
+
+        markersRef.current[d.id] = marker
+        popupsRef.current[d.id] = popup
+      } else {
+        marker.setLngLat([d.lng, d.lat])
+        popup.setLngLat([d.lng, d.lat]).setHTML(popupHTML)
+      }
+    })
+  }, [drones])
+
+  // update trails
+  useEffect(() => {
+    if (!mapRef.current) return
+    const map = mapRef.current
+
+    Object.entries(trails).forEach(([id, points]) => {
+      const sourceId = `trail-${id}`
+      const data = {
+        type: "Feature",
+        geometry: {
+          type: "LineString",
+          coordinates: points.map((p) => [p.lng, p.lat]),
+        },
       }
 
-      const marker = markersRef.current[id];
-      marker.setLngLat([lng, lat]);
+      if (map.getSource(sourceId)) {
+        map.getSource(sourceId).setData(data)
+      } else {
+        map.addSource(sourceId, {
+          type: "geojson",
+          data,
+        })
 
-      marker.getElement().style.transform = `rotate(${heading}deg)`;
-    });
-  }, [drones]);
+        map.addLayer({
+          id: sourceId,
+          type: "line",
+          source: sourceId,
+          layout: {
+            "line-join": "round",
+            "line-cap": "round",
+          },
+          paint: {
+            "line-color": "#00ffff",
+            "line-width": 3,
+            "line-opacity": 0.8,
+          },
+        })
+      }
+    })
+  }, [trails])
 
   return <div ref={mapContainer} style={{ width: "100vw", height: "100vh" }} />;
 }
