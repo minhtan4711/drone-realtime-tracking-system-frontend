@@ -1,0 +1,42 @@
+/* 1. Box sizing */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+/* 2. Remove default margin */
+* {
+    margin: 0;
+}
+
+/* 3. Improve text rendering */
+body {
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* 4. Media defaults */
+img,
+picture,
+video,
+canvas,
+svg {
+    display: block;
+    max-width: 100%;
+}
+
+/* 5. Form defaults */
+input,
+button,
+textarea,
+select {
+    font: inherit;
+}
+
+/* 6. Root height */
+html,
+body,
+#root {
+    height: 100%;
+}
