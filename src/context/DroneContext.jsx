@@ -10,6 +10,8 @@ export function DroneProvider({ children }) {
   const [renderDrones, setRenderDrones] = useState([])
   const [trails, setTrails] = useState({})
 
+  const [selectedDroneId, setSelectedDroneId] = useState(null)
+
   const [mode, setMode] = useState("live") // live | play | pause
   const [currentTs, setCurrentTs] = useState(null)
   const [minTs, setMinTs] = useState(null)
@@ -135,8 +137,7 @@ export function DroneProvider({ children }) {
 
         if (next >= maxTs) {
           stopReplayLoop()
-          setMode("pause")
-          return maxTs
+          setMode("live")
         }
 
         fetchSnapshotAt(next)
@@ -174,6 +175,9 @@ export function DroneProvider({ children }) {
         // render
         drones: renderDrones,
         trails,
+
+        selectedDroneId,
+        setSelectedDroneId,
 
         // live
         liveDrones,
