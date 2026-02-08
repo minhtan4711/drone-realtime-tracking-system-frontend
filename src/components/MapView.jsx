@@ -1,33 +1,35 @@
-import { useEffect, useRef } from "react";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
-import { useDrones } from "../context/DroneContext";
-import droneIcon from "../assets/drone.png";
+import { useEffect, useRef } from "react"
+import mapboxgl from "mapbox-gl"
+import "mapbox-gl/dist/mapbox-gl.css"
+import { useDrones } from "../context/DroneContext"
+import droneIcon from "../assets/drone.png"
 
-mapboxgl.accessToken = "pk.eyJ1IjoibWluaHRhbjQ3MTEwMCIsImEiOiJjbWw5aHRmc2IwMzU2M2VxNGs1dGU3NHhrIn0.O4ErCdPrP5AY8oCpx0w7Rg";
+mapboxgl.accessToken = "pk.eyJ1IjoibWluaHRhbjQ3MTEwMCIsImEiOiJjbWw5aHRmc2IwMzU2M2VxNGs1dGU3NHhrIn0.O4ErCdPrP5AY8oCpx0w7Rg"
 
 export default function MapView() {
   const mapContainer = useRef(null)
   const mapRef = useRef(null)
   const markersRef = useRef({})
   const popupsRef = useRef({})
+  const trailSourceRef = useRef({}) // droneId -> sourceId
+
   const { drones, trails } = useDrones()
 
-  // init map
+  // ---------- init map ----------
   useEffect(() => {
-    if (mapRef.current) return;
+    if (mapRef.current) return
 
     mapRef.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: "mapbox://styles/mapbox/streets-v12",
       center: [105.8, 21.0],
       zoom: 12,
-    });
+    })
 
-    mapRef.current.addControl(new mapboxgl.NavigationControl());
-  }, []);
+    mapRef.current.addControl(new mapboxgl.NavigationControl())
+  }, [])
 
-  // update drones
+  // ---------- update markers ----------
   useEffect(() => {
     if (!mapRef.current) return
     const map = mapRef.current
@@ -48,14 +50,14 @@ export default function MapView() {
       if (!marker) {
         const el = document.createElement("img")
         el.src = droneIcon
-        el.style.width = "32px"
-        el.style.height = "32px"
+        el.style.width = "28px"
+        el.style.height = "28px"
         el.style.cursor = "pointer"
 
         popup = new mapboxgl.Popup({
           closeButton: false,
           closeOnClick: false,
-          offset: 25,
+          offset: 20,
         }).setHTML(popupHTML)
 
         el.addEventListener("mouseenter", () => popup.addTo(map))
@@ -74,14 +76,18 @@ export default function MapView() {
     })
   }, [drones])
 
-  // update trails
+  // ---------- update trails ----------
   useEffect(() => {
     if (!mapRef.current) return
     const map = mapRef.current
 
-    Object.entries(trails).forEach(([id, points]) => {
-      const sourceId = `trail-${id}`
-      const data = {
+    Object.entries(trails).forEach(([droneId, points]) => {
+      if (!points || points.length < 2) return
+
+      const sourceId = `trail-src-${droneId}`
+      const layerId = `trail-layer-${droneId}`
+
+      const geojson = {
         type: "Feature",
         geometry: {
           type: "LineString",
@@ -89,31 +95,29 @@ export default function MapView() {
         },
       }
 
-      if (map.getSource(sourceId)) {
-        map.getSource(sourceId).setData(data)
-      } else {
+      if (!map.getSource(sourceId)) {
         map.addSource(sourceId, {
           type: "geojson",
-          data,
+          data: geojson,
         })
 
         map.addLayer({
-          id: sourceId,
+          id: layerId,
           type: "line",
           source: sourceId,
-          layout: {
-            "line-join": "round",
-            "line-cap": "round",
-          },
           paint: {
-            "line-color": "#00ffff",
-            "line-width": 3,
-            "line-opacity": 0.8,
+            "line-color": "#00b3ff",
+            "line-width": 2,
+            "line-opacity": 0.7,
           },
         })
+
+        trailSourceRef.current[droneId] = sourceId
+      } else {
+        map.getSource(sourceId).setData(geojson)
       }
     })
   }, [trails])
 
-  return <div ref={mapContainer} style={{ width: "100vw", height: "100vh" }} />;
+  return <div ref={mapContainer} style={{ position: "absolute", inset: 0 }} />
 }
