@@ -3,7 +3,6 @@ import { useDrones } from "../context/DroneContext"
 export default function TimelineBar() {
   const {
     drones,
-    mode,
     setMode,
     currentTs,
     setCurrentTs,
@@ -26,19 +25,16 @@ export default function TimelineBar() {
           <span style={{ ...styles.dot, background: dotColor }} />
           <span style={styles.statusText}>{isConnected ? "Connected" : "Disconnected"}</span>
           <br/>
-          <div>TOTAL DRONES: {drones.length}</div>
+          <div>TOTAL DRONES: {drones.length ? drones.length : "None"}</div>
         </div>
 
         <div style={styles.controlsRow}>
           <div style={styles.controlsLeft}>
             <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => setMode("live")}>
-              • Live
+              LIVE
             </button>
             <button style={styles.btn} onClick={() => setMode("play")}>
               ▶ Play
-            </button>
-            <button style={styles.btn} onClick={() => setMode("pause")}>
-              ⏸ Pause
             </button>
           </div>
 
@@ -123,9 +119,9 @@ const styles = {
     cursor: "pointer",
   },
   btnPrimary: {
-    background: "#8aa1ff",
-    color: "#0b1220",
-    borderColor: "#8aa1ff",
+    background: "#fe0000",
+    color: "#ffffff",
+    borderColor: "#ce0505",
   },
   timelineRow: {
     display: "flex",
@@ -141,5 +137,4 @@ const styles = {
     color: "#475569",
     textAlign: "right",
   },
-
 }
