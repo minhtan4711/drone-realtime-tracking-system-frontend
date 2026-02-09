@@ -9,6 +9,7 @@ mapboxgl.accessToken =
   "pk.eyJ1IjoibWluaHRhbjQ3MTEwMCIsImEiOiJjbWw5aHRmc2IwMzU2M2VxNGs1dGU3NHhrIn0.O4ErCdPrP5AY8oCpx0w7Rg"
 
 const MIN_ZOOM_FOR_TRAIL = 10
+const REPLAY_WINDOW_MS = 5 * 60 * 1000
 
 export default function MapView() {
   const mapContainer = useRef(null)
@@ -19,10 +20,16 @@ export default function MapView() {
   const trailLayerRef = useRef(null)
   const trailPointsRef = useRef([])
 
-  const trailCacheRef = useRef(new Map()) // droneId -> points[]
+  const trailCacheRef = useRef(new Map())
   const abortRef = useRef(null)
 
-  const { drones, selectedDroneId, setSelectedDroneId } = useDrones()
+  const {
+    drones,
+    selectedDroneId,
+    setSelectedDroneId,
+    mode, // live | play | pause
+    currentTs,
+  } = useDrones()
 
   /* ---------------- INIT MAP ---------------- */
   useEffect(() => {
@@ -207,21 +214,88 @@ export default function MapView() {
     ])
   }, [selectedDroneId])
 
-  /* ---------------- LOAD TRAIL ---------------- */
+  /* ---------------- HELPERS ---------------- */
+  function clearTrail(map, clearCache = false) {
+    if (trailLayerRef.current && map.getLayer(trailLayerRef.current))
+      map.removeLayer(trailLayerRef.current)
+    if (trailSourceRef.current && map.getSource(trailSourceRef.current))
+      map.removeSource(trailSourceRef.current)
+
+    trailLayerRef.current = null
+    trailSourceRef.current = null
+    trailPointsRef.current = []
+
+    if (clearCache && selectedDroneId) {
+      trailCacheRef.current.delete(selectedDroneId)
+    }
+  }
+
+  function renderTrailPoints(map, points) {
+    if (!points || points.length < 2) {
+      clearTrail(map)
+      return
+    }
+
+    const geojson = {
+      type: "Feature",
+      geometry: {
+        type: "LineString",
+        coordinates: points.map((p) => [p.lng, p.lat]),
+      },
+    }
+
+    if (!trailSourceRef.current) {
+      const sourceId = "selected-drone-trail-src"
+      const layerId = "selected-drone-trail-layer"
+
+      map.addSource(sourceId, { type: "geojson", data: geojson })
+      map.addLayer({
+        id: layerId,
+        type: "line",
+        source: sourceId,
+        paint: {
+          "line-color": "#ff5500",
+          "line-width": 3,
+          "line-opacity": 0.85,
+        },
+      })
+
+      trailSourceRef.current = sourceId
+      trailLayerRef.current = layerId
+    } else {
+      map.getSource(trailSourceRef.current).setData(geojson)
+    }
+  }
+
+  function renderTrailSlice() {
+    const map = mapRef.current
+    if (!map || !selectedDroneId) return
+
+    const all = trailCacheRef.current.get(selectedDroneId) || []
+    if (all.length < 2) {
+      clearTrail(map)
+      return
+    }
+
+    let slice = all
+
+    if (mode !== "live" && currentTs) {
+      const from = currentTs - REPLAY_WINDOW_MS
+      slice = all.filter((p) => p.ts >= from && p.ts <= currentTs)
+    }
+
+    trailPointsRef.current = slice
+    renderTrailPoints(map, slice)
+  }
+
+  /* ---------------- LOAD TRAIL FROM BE (ON DRONE SELECT) ---------------- */
   useEffect(() => {
     if (!mapRef.current || !selectedDroneId) return
     const map = mapRef.current
 
     async function loadTrail() {
       if (map.getZoom() < MIN_ZOOM_FOR_TRAIL) {
-        clearTrail(true)
-        return
-      }
-
-      // cache hit
-      if (trailCacheRef.current.has(selectedDroneId)) {
-        trailPointsRef.current = [...trailCacheRef.current.get(selectedDroneId)]
-        renderTrail(trailPointsRef.current)
+        clearTrail(map, true)
         return
       }
 
@@ -234,69 +308,36 @@ export default function MapView() {
           signal: controller.signal,
         })
         const points = res.positions || []
-        if (points.length < 2) return
-
         trailCacheRef.current.set(selectedDroneId, points)
-        trailPointsRef.current = [...points]
-        renderTrail(points)
+        trailPointsRef.current = points
+        renderTrailSlice()
       } catch (err) {
         if (err.name !== "AbortError") console.error(err)
-      }
-    }
-
-    function renderTrail(points) {
-      const geojson = {
-        type: "Feature",
-        geometry: {
-          type: "LineString",
-          coordinates: points.map((p) => [p.lng, p.lat]),
-        },
-      }
-
-      if (!trailSourceRef.current) {
-        const sourceId = "selected-drone-trail-src"
-        const layerId = "selected-drone-trail-layer"
-
-        map.addSource(sourceId, { type: "geojson", data: geojson })
-        map.addLayer({
-          id: layerId,
-          type: "line",
-          source: sourceId,
-          paint: {
-            "line-color": "#ff5500",
-            "line-width": 3,
-            "line-opacity": 0.85,
-          },
-        })
-
-        trailSourceRef.current = sourceId
-        trailLayerRef.current = layerId
-      } else {
-        map.getSource(trailSourceRef.current).setData(geojson)
-      }
-    }
-
-    function clearTrail(clearCache = false) {
-      if (trailLayerRef.current && map.getLayer(trailLayerRef.current))
-        map.removeLayer(trailLayerRef.current)
-      if (trailSourceRef.current && map.getSource(trailSourceRef.current))
-        map.removeSource(trailSourceRef.current)
-
-      trailLayerRef.current = null
-      trailSourceRef.current = null
-      trailPointsRef.current = []
-
-      if (clearCache && selectedDroneId) {
-        trailCacheRef.current.delete(selectedDroneId)
       }
     }
 
     loadTrail()
   }, [selectedDroneId])
 
-  /* ---------------- REALTIME APPEND TRAIL ---------------- */
+  /* ---------------- SLICE TRAIL ON MODE / TIME CHANGE ---------------- */
   useEffect(() => {
-    if (!mapRef.current || !selectedDroneId || !trailSourceRef.current) return
+    if (!mapRef.current || !selectedDroneId) return
+    if (!trailCacheRef.current.has(selectedDroneId)) return
+    if (mode === "live") return
+
+    renderTrailSlice()
+  }, [mode, currentTs, selectedDroneId])
+
+  /* ---------------- REALTIME APPEND TRAIL (LIVE ONLY) ---------------- */
+  useEffect(() => {
+    if (
+      !mapRef.current ||
+      !selectedDroneId ||
+      !trailSourceRef.current ||
+      mode !== "live"
+    )
+      return
+
     const map = mapRef.current
     const source = map.getSource(trailSourceRef.current)
     if (!source) return
@@ -317,7 +358,32 @@ export default function MapView() {
         coordinates: trailPointsRef.current.map((p) => [p.lng, p.lat]),
       },
     })
-  }, [drones, selectedDroneId])
+  }, [drones, selectedDroneId, mode])
+
+  /* ---------------- MODE CHANGE HANDLING ---------------- */
+  useEffect(() => {
+    if (!mapRef.current || !selectedDroneId) return
+    const map = mapRef.current
+
+    if (mode === "live") {
+      // reload full trail then append realtime
+      clearTrail(map, true)
+      ;(async () => {
+        try {
+          const res = await fetchTrailByDrone(selectedDroneId)
+          const points = res.positions || []
+          trailCacheRef.current.set(selectedDroneId, points)
+          trailPointsRef.current = points
+          renderTrailSlice()
+        } catch (e) {
+          console.error("Reload live trail failed", e)
+        }
+      })()
+    } else {
+      // play / pause → stop realtime append
+      clearTrail(map)
+    }
+  }, [mode, selectedDroneId])
 
   /* ---------------- CLEAR TRAIL ON ZOOM OUT ---------------- */
   useEffect(() => {
@@ -326,16 +392,7 @@ export default function MapView() {
 
     const onZoom = () => {
       if (map.getZoom() < MIN_ZOOM_FOR_TRAIL && trailLayerRef.current) {
-        if (map.getLayer(trailLayerRef.current))
-          map.removeLayer(trailLayerRef.current)
-        if (map.getSource(trailSourceRef.current))
-          map.removeSource(trailSourceRef.current)
-
-        trailLayerRef.current = null
-        trailSourceRef.current = null
-        trailPointsRef.current = []
-
-        if (selectedDroneId) trailCacheRef.current.delete(selectedDroneId)
+        clearTrail(map, true)
       }
     }
 

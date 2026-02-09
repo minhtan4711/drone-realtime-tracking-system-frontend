@@ -1,14 +1,12 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react"
 import { connectWS, closeWS } from "../services/wsClient"
 import { fetchSnapshotAt } from "../services/replayApi"
-import { fetchTrailWindow } from "../services/trailApi"
 
 const DroneContext = createContext()
 
 export function DroneProvider({ children }) {
   const [liveDrones, setLiveDrones] = useState([])
   const [renderDrones, setRenderDrones] = useState([])
-  const [trails, setTrails] = useState({})
 
   const [selectedDroneId, setSelectedDroneId] = useState(null)
 
@@ -20,7 +18,6 @@ export function DroneProvider({ children }) {
 
   const wsRef = useRef(null)
   const replayTimerRef = useRef(null)
-
 
   function applySnapshot(snapshot) {
     setRenderDrones(snapshot)
@@ -40,40 +37,12 @@ export function DroneProvider({ children }) {
     }
   }
 
-  function appendTrailsFromSnapshot(snapshot) {
-    const now = Date.now()
-    const WINDOW_MS = 1 * 60 * 1000
-
-    setTrails((prev) => {
-      const next = { ...prev }
-
-      snapshot.forEach((d) => {
-        const arr = next[d.id] || []
-        const updated = [...arr, { lat: d.lat, lng: d.lng, ts: d.ts }]
-          .filter((p) => p.ts >= now - WINDOW_MS)
-
-        next[d.id] = updated
-      })
-
-      return next
-    })
-  }
-  
-  function setTrailsFromWindow(windowRes) {
-    const next = {}
-    for (const [id, arr] of Object.entries(windowRes.positionsByDrone || {})) {
-      next[id] = arr
-    }
-    setTrails(next)
-  }
-
-
+  /* ---------------- LIVE MODE ---------------- */
   function startLiveMode() {
     stopReplayLoop()
     stopWS()
-    let trailLoadedRef = false
 
-    wsRef.current = connectWS(async (msg) => {
+    wsRef.current = connectWS((msg) => {
       if (msg.type === "snapshot" && Array.isArray(msg.data)) {
         const incoming = msg.data
         const ts = incoming[0]?.ts || Date.now()
@@ -84,25 +53,11 @@ export function DroneProvider({ children }) {
         setMinTs((prev) => (prev ? Math.min(prev, ts) : ts))
         setMaxTs(ts)
         setCurrentTs(ts)
-
-        if (!trailLoadedRef) {
-          trailLoadedRef = true
-          try {
-            const windowRes = await fetchTrailWindow(ts)
-            if (windowRes?.positionsByDrone) {
-              setTrailsFromWindow(windowRes)
-            }
-          } catch (e) {
-            console.error("Fetch trail window failed", e)
-          }
-        }
-
-        appendTrailsFromSnapshot(incoming)
       }
     })
   }
 
-
+  /* ---------------- PAUSE MODE ---------------- */
   async function startPauseMode(ts) {
     stopReplayLoop()
     stopWS()
@@ -110,20 +65,15 @@ export function DroneProvider({ children }) {
 
     try {
       const snapshot = await fetchSnapshotAt(ts)
-      if (!snapshot?.drones) return
-
-      applySnapshot(snapshot.drones)
-
-      const trailRes = await fetchTrailWindow(ts)
-      if (trailRes?.positionsByDrone) {
-        setTrailsFromWindow(trailRes)
+      if (snapshot?.drones) {
+        applySnapshot(snapshot.drones)
       }
     } catch (err) {
       console.error("Pause replay failed:", err)
     }
   }
 
-
+  /* ---------------- PLAY MODE ---------------- */
   function startPlayMode(startTs) {
     stopWS()
     stopReplayLoop()
@@ -144,7 +94,6 @@ export function DroneProvider({ children }) {
           .then((res) => {
             if (res?.drones) {
               applySnapshot(res.drones)
-              appendTrailsFromSnapshot(res.drones)
             }
           })
           .catch(console.error)
@@ -154,35 +103,33 @@ export function DroneProvider({ children }) {
     }, 1000)
   }
 
+  /* ---------------- MODE SWITCH ---------------- */
   useEffect(() => {
     if (mode === "live") startLiveMode()
     if (mode === "pause") currentTs && startPauseMode(currentTs)
     if (mode === "play") currentTs && startPlayMode(currentTs)
 
     return () => stopReplayLoop()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode])
 
-  
   useEffect(() => {
     if (mode === "pause" && currentTs) {
       startPauseMode(currentTs)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTs])
 
   return (
     <DroneContext.Provider
       value={{
-        // render
         drones: renderDrones,
-        trails,
 
         selectedDroneId,
         setSelectedDroneId,
 
-        // live
         liveDrones,
 
-        // time & mode
         mode,
         setMode,
         currentTs,
@@ -198,6 +145,7 @@ export function DroneProvider({ children }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useDrones() {
   return useContext(DroneContext)
 }
