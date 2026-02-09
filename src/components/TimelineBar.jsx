@@ -3,6 +3,7 @@ import { useDrones } from "../context/DroneContext"
 export default function TimelineBar() {
   const {
     drones,
+    mode,
     setMode,
     currentTs,
     setCurrentTs,
@@ -12,6 +13,8 @@ export default function TimelineBar() {
 
   const isConnected = drones.length > 0
   const dotColor = isConnected ? "#2ecc71" : "#ff3b30"
+  const isPlayEnabled = Boolean(currentTs && maxTs && currentTs < maxTs)
+  const isLiveActive = mode === "live"
 
   function onScrub(ts) {
     setMode("pause")
@@ -24,16 +27,23 @@ export default function TimelineBar() {
         <div style={styles.statusRow}>
           <span style={{ ...styles.dot, background: dotColor }} />
           <span style={styles.statusText}>{isConnected ? "Connected" : "Disconnected"}</span>
-          <br/>
-          <div>TOTAL DRONES: {drones.length ? drones.length : "None"}</div>
+          <br />
+          <div>TOTAL DRONES: {drones.length}</div>
         </div>
 
         <div style={styles.controlsRow}>
           <div style={styles.controlsLeft}>
-            <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => setMode("live")}>
+            <button
+              style={{ ...styles.btn, ...(isLiveActive ? styles.btnPrimary : null) }}
+              onClick={() => setMode("live")}
+            >
               LIVE
             </button>
-            <button style={styles.btn} onClick={() => setMode("play")}>
+            <button
+              style={{ ...styles.btn, ...(isPlayEnabled ? null : styles.btnDisabled) }}
+              onClick={() => setMode("play")}
+              disabled={!isPlayEnabled}
+            >
               ▶ Play
             </button>
           </div>
@@ -42,6 +52,9 @@ export default function TimelineBar() {
         </div>
 
         <div style={styles.timelineRow}>
+          <span style={styles.edgeLabel}>
+            {minTs ? new Date(minTs).toLocaleTimeString() : "--:--:--"}
+          </span>
           <input
             type="range"
             step={50}
@@ -123,10 +136,20 @@ const styles = {
     color: "#ffffff",
     borderColor: "#ce0505",
   },
+  btnDisabled: {
+    opacity: 0.45,
+    cursor: "not-allowed",
+  },
   timelineRow: {
     display: "flex",
     alignItems: "center",
     gap: 10,
+  },
+  edgeLabel: {
+    minWidth: 90,
+    fontSize: 12,
+    color: "#64748b",
+    textAlign: "left",
   },
   timelineRange: {
     flex: 1,
