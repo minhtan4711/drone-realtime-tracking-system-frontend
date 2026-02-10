@@ -11,7 +11,7 @@ export function DroneProvider({ children }) {
   const REPLAY_TICK_MS = 1000
   const MIN_WINDOW_MS = 5 * 60 * 1000
 
-  /* ---------------- STATE ---------------- */
+  // state
   const [liveDrones, setLiveDrones] = useState([])
   const [renderDrones, setRenderDrones] = useState([])
 
@@ -25,13 +25,13 @@ export function DroneProvider({ children }) {
 
   const [statusFilter, setStatusFilterRaw] = useState([])
 
-  /* ---------------- REFS ---------------- */
+  // refs
   const wsRef = useRef(null)
   const modeRef = useRef(mode)
   const statusFilterRef = useRef(statusFilter)
   const replayTimerRef = useRef(null)
 
-  /* ---------------- HELPERS ---------------- */
+  // helpers
   function normalizeStatusFilter(next) {
     if (!Array.isArray(next)) return []
     const normalized = next
@@ -65,7 +65,7 @@ export function DroneProvider({ children }) {
     }
   }
 
-  /* ---------------- MODE: LIVE ---------------- */
+  // live mode
   function startLiveMode() {
     stopReplayLoop()
     if (liveDrones.length > 0) {
@@ -74,7 +74,7 @@ export function DroneProvider({ children }) {
     }
   }
 
-  /* ---------------- MODE: PAUSE ---------------- */
+  // pause mode
   async function startPauseMode(ts) {
     stopReplayLoop()
     if (!ts) return
@@ -90,7 +90,7 @@ export function DroneProvider({ children }) {
     }
   }
 
-  /* ---------------- MODE: PLAY ---------------- */
+  // play mode
   function startPlayMode(startTs) {
     stopReplayLoop()
     if (!startTs || !maxTs) return
@@ -120,7 +120,7 @@ export function DroneProvider({ children }) {
     }, REPLAY_TICK_MS)
   }
 
-  /* ---------------- EFFECTS: MODE SWITCH ---------------- */
+  // mode switch
   useEffect(() => {
     modeRef.current = mode
     if (mode === "live") startLiveMode()
@@ -129,28 +129,27 @@ export function DroneProvider({ children }) {
     return () => stopReplayLoop()
   }, [mode])
 
-  /* ---------------- EFFECTS: FILTER ---------------- */
+  // filter
   useEffect(() => {
     const status = statusFilter.join(",")
     statusFilterRef.current = statusFilter
     sendFilter(status)
   }, [statusFilter])
 
-  /* ---------------- EFFECTS: FILTER (PAUSE REFRESH) ---------------- */
+  // filer on pause
   useEffect(() => {
     if (mode !== "pause") return
     if (!currentTs) return
     startPauseMode(currentTs)
   }, [statusFilter, mode, currentTs])
 
-  /* ---------------- EFFECTS: PAUSE SCRUB ---------------- */
   useEffect(() => {
     if (mode !== "pause") return
     if (!currentTs) return
     startPauseMode(currentTs)
   }, [mode, currentTs])
 
-  /* ---------------- EFFECTS: WS CONNECT ---------------- */
+  // connect ws
   useEffect(() => {
     if (wsRef.current) return
     wsRef.current = connectWS((msg) => {

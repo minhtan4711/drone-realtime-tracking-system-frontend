@@ -15,7 +15,7 @@ const REPLAY_WINDOW_MS = 5 * 60 * 1000
 const MAX_TRAIL_POINTS = 200
 
 export default function MapView() {
-  /* ---------------- REFS ---------------- */
+  // refs
   const mapContainer = useRef(null)
   const mapRef = useRef(null)
   const popupRef = useRef(null)
@@ -29,7 +29,7 @@ export default function MapView() {
   const selectedStatusRef = useRef(null)
   const needsTrailReloadRef = useRef(false)
 
-  /* ---------------- STATE ---------------- */
+  // state
   const {
     drones,
     liveDrones,
@@ -39,7 +39,7 @@ export default function MapView() {
     currentTs,
   } = useDrones()
 
-  /* ---------------- MAP INIT ---------------- */
+  // map init
   useEffect(() => {
     if (mapRef.current) return
 
@@ -62,7 +62,7 @@ export default function MapView() {
     mapRef.current = map
   }, [setSelectedDroneId])
 
-  /* ---------------- DRONE SOURCE UPDATE ---------------- */
+  // drone source update
   useEffect(() => {
     if (!mapRef.current) return
     const map = mapRef.current
@@ -85,7 +85,7 @@ export default function MapView() {
     })
   }, [drones])
 
-  /* ---------------- SELECT HIGHLIGHT ---------------- */
+  // select highlight
   useEffect(() => {
     if (!mapRef.current) return
     const map = mapRef.current
@@ -98,8 +98,8 @@ export default function MapView() {
     ])
   }, [selectedDroneId])
 
-  /* ---------------- TRAIL HELPERS ---------------- */
-  // Remove trail layer/source and (optionally) cache for selected drone
+  // trail helpers
+  // remove trail for selected drone
   function clearTrail(map, clearCache = false) {
     if (trailLayerRef.current && map.getLayer(trailLayerRef.current))
       map.removeLayer(trailLayerRef.current)
@@ -115,7 +115,7 @@ export default function MapView() {
     }
   }
 
-  // Draw line from a list of points
+  // draw line from a list of points -> trail
   function renderTrailPoints(map, points) {
     if (!points || points.length < 2) {
       clearTrail(map)
@@ -153,7 +153,7 @@ export default function MapView() {
     }
   }
 
-  // Slice trail by replay window
+  // slice trail by replay window
   function renderTrailSlice() {
     const map = mapRef.current
     if (!map || !selectedDroneId) return
@@ -174,7 +174,7 @@ export default function MapView() {
     renderTrailPoints(map, slice)
   }
 
-  // Fetch trail from BE for selected drone
+  // fetch trail from BE for selected drone
   async function loadTrailForSelected() {
     if (!mapRef.current || !selectedDroneId) return
     const map = mapRef.current
@@ -201,13 +201,13 @@ export default function MapView() {
     }
   }
 
-  /* ---------------- TRAIL EFFECTS ---------------- */
-  // Reset status tracker when changing selected drone
+  // trail effect
+  // reset status tracker when changing selected drone
   useEffect(() => {
     selectedStatusRef.current = null
   }, [selectedDroneId])
 
-  // Clear and reload trail when status changes (but keep selection)
+  // clear and reload trail when status changes but keep selection
   useEffect(() => {
     if (!mapRef.current || !selectedDroneId) return
     const map = mapRef.current
@@ -234,13 +234,13 @@ export default function MapView() {
     selectedStatusRef.current = drone.status
   }, [drones, liveDrones, selectedDroneId, mode])
 
-  // Load trail when selecting a drone
+  // load trail when selecting a drone
   useEffect(() => {
     if (!selectedDroneId) return
     loadTrailForSelected()
   }, [selectedDroneId])
 
-  // Update trail slice on replay time changes
+  // update trail slice on replay time changes
   useEffect(() => {
     if (!mapRef.current || !selectedDroneId) return
     if (!trailCacheRef.current.has(selectedDroneId)) return
@@ -249,7 +249,7 @@ export default function MapView() {
     renderTrailSlice()
   }, [mode, currentTs, selectedDroneId])
 
-  // Append realtime points in live mode
+  // append realtime points in live mode
   useEffect(() => {
     if (
       !mapRef.current ||
@@ -284,7 +284,7 @@ export default function MapView() {
     })
   }, [drones, selectedDroneId, mode])
 
-  // Switch live/play/pause behavior
+  // switch live/play/pause
   useEffect(() => {
     if (!mapRef.current || !selectedDroneId) return
     const map = mapRef.current
@@ -297,7 +297,7 @@ export default function MapView() {
     }
   }, [mode, selectedDroneId])
 
-  // Clear trail when zooming out too far
+  // clear trail when zooming out too far
   useEffect(() => {
     if (!mapRef.current) return
     const map = mapRef.current
@@ -320,7 +320,7 @@ export default function MapView() {
   )
 }
 
-/* ---------------- MAP SETUP HELPERS ---------------- */
+// map setup helpers
 async function ensureDroneIcon(map) {
   if (map.hasImage("drone-icon")) return
   const img = new Image(28, 28)
