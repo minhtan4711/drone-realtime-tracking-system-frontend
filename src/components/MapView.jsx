@@ -2,7 +2,7 @@
 import { useEffect, useRef } from "react"
 import mapboxgl from "mapbox-gl"
 import "mapbox-gl/dist/mapbox-gl.css"
-import { useDrones } from "../context/DroneContext"
+import { useDrones } from "../hooks/useDrones"
 import FilterPanel from "./FilterPanel"
 import {
   // trail limits / window

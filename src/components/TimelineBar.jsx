@@ -1,4 +1,4 @@
-import { useDrones } from "../context/DroneContext"
+import { useDrones } from "../hooks/useDrones"
 
 export default function TimelineBar() {
   const {
@@ -27,8 +27,6 @@ export default function TimelineBar() {
         <div style={styles.statusRow}>
           <span style={{ ...styles.dot, background: dotColor }} />
           <span style={styles.statusText}>{isConnected ? "Connected" : "Disconnected"}</span>
-          {/* <br />
-          <div>TOTAL DRONES: {drones.length}</div> */}
         </div>
 
         <div style={styles.controlsRow}>

@@ -1,19 +1,25 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-/* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useEffect, useRef, useState } from "react"
-import { connectWS, closeWS, sendFilter } from "../services/wsClient"
+import { useEffect, useRef, useState } from "react"
+import { DroneContext } from "./DroneContextBase"
+import { connectWS, sendFilter } from "../services/wsClient"
 import { fetchSnapshotAt } from "../services/replayApi"
+import {
+  REPLAY_TICK_MS,
+  MIN_WINDOW_MS
+} from "../constants/drone"
+import {
+  normalizeStatusFilter,
+  stopReplayLoop,
+  stopWS,
+  applySnapshot,
+} from "../helpers/drone"
 
-const DroneContext = createContext()
+
 
 export function DroneProvider({ children }) {
-  const STATUS_OPTIONS = ["ACTIVE", "PENDING", "OFFLINE"]
-  const REPLAY_TICK_MS = 1000
-  const MIN_WINDOW_MS = 5 * 60 * 1000
-
   // state
-  const [liveDrones, setLiveDrones] = useState([])
-  const [renderDrones, setRenderDrones] = useState([])
+  const [liveDrones, setLiveDrones] = useState([]) // for live mode
+  const [renderDrones, setRenderDrones] = useState([]) // for replay mode
 
   const [selectedDroneId, setSelectedDroneId] = useState(null)
 
@@ -32,14 +38,6 @@ export function DroneProvider({ children }) {
   const replayTimerRef = useRef(null)
 
   // helpers
-  function normalizeStatusFilter(next) {
-    if (!Array.isArray(next)) return []
-    const normalized = next
-      .map((s) => String(s).trim().toUpperCase())
-      .filter((s) => STATUS_OPTIONS.includes(s))
-    return Array.from(new Set(normalized))
-  }
-
   function setStatusFilter(next) {
     setStatusFilterRaw((prev) => {
       const value = typeof next === "function" ? next(prev) : next
@@ -47,27 +45,9 @@ export function DroneProvider({ children }) {
     })
   }
 
-  function applySnapshot(snapshot) {
-    setRenderDrones(snapshot)
-  }
-
-  function stopReplayLoop() {
-    if (replayTimerRef.current) {
-      clearInterval(replayTimerRef.current)
-      replayTimerRef.current = null
-    }
-  }
-
-  function stopWS() {
-    if (wsRef.current) {
-      closeWS()
-      wsRef.current = null
-    }
-  }
-
   // live mode
   function startLiveMode() {
-    stopReplayLoop()
+    stopReplayLoop(replayTimerRef)
     if (liveDrones.length > 0) {
       setRenderDrones(liveDrones)
       if (maxTs) setCurrentTs(maxTs)
@@ -76,14 +56,14 @@ export function DroneProvider({ children }) {
 
   // pause mode
   async function startPauseMode(ts) {
-    stopReplayLoop()
+    stopReplayLoop(replayTimerRef)
     if (!ts) return
 
     try {
       const snapshot = await fetchSnapshotAt(ts, statusFilter)
       if (snapshot?.drones) {
         const snapTs = snapshot.ts ? Number(snapshot.ts) : ts
-        applySnapshot(snapshot.drones.map((d) => ({ ...d, ts: snapTs })))
+        applySnapshot(setRenderDrones, snapshot.drones.map((d) => ({ ...d, ts: snapTs })))
       }
     } catch (err) {
       console.error("Pause replay failed:", err)
@@ -92,7 +72,7 @@ export function DroneProvider({ children }) {
 
   // play mode
   function startPlayMode(startTs) {
-    stopReplayLoop()
+    stopReplayLoop(replayTimerRef)
     if (!startTs || !maxTs) return
 
     replayTimerRef.current = setInterval(() => {
@@ -102,7 +82,7 @@ export function DroneProvider({ children }) {
         const next = prev + REPLAY_TICK_MS * speed
 
         if (next >= maxTs) {
-          stopReplayLoop()
+          stopReplayLoop(replayTimerRef)
           setMode("live")
         }
 
@@ -110,7 +90,7 @@ export function DroneProvider({ children }) {
           .then((res) => {
             if (res?.drones) {
               const snapTs = res.ts ? Number(res.ts) : next
-              applySnapshot(res.drones.map((d) => ({ ...d, ts: snapTs })))
+              applySnapshot(setRenderDrones, res.drones.map((d) => ({ ...d, ts: snapTs })))
             }
           })
           .catch(console.error)
@@ -126,7 +106,7 @@ export function DroneProvider({ children }) {
     if (mode === "live") startLiveMode()
     if (mode === "play") currentTs && startPlayMode(currentTs)
 
-    return () => stopReplayLoop()
+    return () => stopReplayLoop(replayTimerRef)
   }, [mode])
 
   // filter
@@ -168,7 +148,7 @@ export function DroneProvider({ children }) {
       }
     })
 
-    return () => stopWS()
+    return () => stopWS(wsRef)
   }, [])
 
   return (
@@ -197,8 +177,4 @@ export function DroneProvider({ children }) {
       {children}
     </DroneContext.Provider>
   )
-}
-
-export function useDrones() {
-  return useContext(DroneContext)
 }

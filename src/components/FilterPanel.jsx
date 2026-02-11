@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { useDrones } from "../context/DroneContext"
+import { useDrones } from "../hooks/useDrones"
 
 const OPTIONS = ["ACTIVE", "PENDING", "OFFLINE"]
 
