@@ -145,7 +145,7 @@ export function bindMapEvents(mapboxgl, map, setSelectedDroneId, popupRef) {
     map.on("mouseenter", "unclustered-drone", (e) => {
         map.getCanvas().style.cursor = "pointer"
         const f = e.features[0]
-        popupRef.current = mapboxgl.Popup({
+        popupRef.current = new mapboxgl.Popup({
             closeButton: false,
             closeOnClick: false,
             offset: 15,
