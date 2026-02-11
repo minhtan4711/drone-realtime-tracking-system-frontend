@@ -1,45 +1,44 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-/* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useEffect, useRef, useState } from "react"
-import { connectWS, closeWS, sendFilter } from "../services/wsClient"
+import { useEffect, useRef, useState } from "react"
+import { DroneContext } from "./DroneContextBase"
+import { connectWS, sendFilter } from "../services/wsClient"
 import { fetchSnapshotAt } from "../services/replayApi"
+import {
+  REPLAY_TICK_MS,
+  MIN_WINDOW_MS
+} from "../constants/drone"
+import {
+  normalizeStatusFilter,
+  stopReplayLoop,
+  stopWS,
+  applySnapshot,
+} from "../helpers/drone"
 
-const DroneContext = createContext()
+
 
 export function DroneProvider({ children }) {
-  const STATUS_OPTIONS = ["ACTIVE", "PENDING", "OFFLINE"]
-  const REPLAY_TICK_MS = 1000
-  const MIN_WINDOW_MS = 5 * 60 * 1000
-
-  // state
-  const [liveDrones, setLiveDrones] = useState([])
-  const [renderDrones, setRenderDrones] = useState([])
+  // state for realtime
+  const [liveDrones, setLiveDrones] = useState([]) // for live mode
+  const [renderDrones, setRenderDrones] = useState([]) // for replay mode
 
   const [selectedDroneId, setSelectedDroneId] = useState(null)
 
+  // playback controls
   const [mode, setMode] = useState("live") // live | play | pause
   const [currentTs, setCurrentTs] = useState(null)
   const [minTs, setMinTs] = useState(null)
   const [maxTs, setMaxTs] = useState(null)
-  const [speed, setSpeed] = useState(1)
 
+  // filter state status
   const [statusFilter, setStatusFilterRaw] = useState([])
 
-  // refs
+  // refs: keep mutable state for WS/replay without re-render
   const wsRef = useRef(null)
   const modeRef = useRef(mode)
   const statusFilterRef = useRef(statusFilter)
   const replayTimerRef = useRef(null)
 
   // helpers
-  function normalizeStatusFilter(next) {
-    if (!Array.isArray(next)) return []
-    const normalized = next
-      .map((s) => String(s).trim().toUpperCase())
-      .filter((s) => STATUS_OPTIONS.includes(s))
-    return Array.from(new Set(normalized))
-  }
-
   function setStatusFilter(next) {
     setStatusFilterRaw((prev) => {
       const value = typeof next === "function" ? next(prev) : next
@@ -47,62 +46,44 @@ export function DroneProvider({ children }) {
     })
   }
 
-  function applySnapshot(snapshot) {
-    setRenderDrones(snapshot)
-  }
-
-  function stopReplayLoop() {
-    if (replayTimerRef.current) {
-      clearInterval(replayTimerRef.current)
-      replayTimerRef.current = null
-    }
-  }
-
-  function stopWS() {
-    if (wsRef.current) {
-      closeWS()
-      wsRef.current = null
-    }
-  }
-
-  // live mode
+  // live mode show latest WS snapshot
   function startLiveMode() {
-    stopReplayLoop()
+    stopReplayLoop(replayTimerRef)
     if (liveDrones.length > 0) {
       setRenderDrones(liveDrones)
       if (maxTs) setCurrentTs(maxTs)
     }
   }
 
-  // pause mode
+  // pause mode fetch snapshot at currentTs
   async function startPauseMode(ts) {
-    stopReplayLoop()
+    stopReplayLoop(replayTimerRef)
     if (!ts) return
 
     try {
       const snapshot = await fetchSnapshotAt(ts, statusFilter)
       if (snapshot?.drones) {
         const snapTs = snapshot.ts ? Number(snapshot.ts) : ts
-        applySnapshot(snapshot.drones.map((d) => ({ ...d, ts: snapTs })))
+        applySnapshot(setRenderDrones, snapshot.drones.map((d) => ({ ...d, ts: snapTs })))
       }
     } catch (err) {
       console.error("Pause replay failed:", err)
     }
   }
 
-  // play mode
+  // play mode advance time and fetch snapshots each tick
   function startPlayMode(startTs) {
-    stopReplayLoop()
+    stopReplayLoop(replayTimerRef)
     if (!startTs || !maxTs) return
 
     replayTimerRef.current = setInterval(() => {
       setCurrentTs((prev) => {
         if (!prev) return prev
 
-        const next = prev + REPLAY_TICK_MS * speed
+        const next = prev + REPLAY_TICK_MS
 
         if (next >= maxTs) {
-          stopReplayLoop()
+          stopReplayLoop(replayTimerRef)
           setMode("live")
         }
 
@@ -110,7 +91,7 @@ export function DroneProvider({ children }) {
           .then((res) => {
             if (res?.drones) {
               const snapTs = res.ts ? Number(res.ts) : next
-              applySnapshot(res.drones.map((d) => ({ ...d, ts: snapTs })))
+              applySnapshot(setRenderDrones, res.drones.map((d) => ({ ...d, ts: snapTs })))
             }
           })
           .catch(console.error)
@@ -126,30 +107,24 @@ export function DroneProvider({ children }) {
     if (mode === "live") startLiveMode()
     if (mode === "play") currentTs && startPlayMode(currentTs)
 
-    return () => stopReplayLoop()
+    return () => stopReplayLoop(replayTimerRef)
   }, [mode])
 
-  // filter
+  // filter update WS filter and keep ref for replay
   useEffect(() => {
     const status = statusFilter.join(",")
     statusFilterRef.current = statusFilter
     sendFilter(status)
   }, [statusFilter])
 
-  // filer on pause
+  // pause refetch when filter changes
   useEffect(() => {
     if (mode !== "pause") return
     if (!currentTs) return
     startPauseMode(currentTs)
   }, [statusFilter, mode, currentTs])
 
-  useEffect(() => {
-    if (mode !== "pause") return
-    if (!currentTs) return
-    startPauseMode(currentTs)
-  }, [mode, currentTs])
-
-  // connect ws
+  // connect WS once and keep liveDrones updated
   useEffect(() => {
     if (wsRef.current) return
     wsRef.current = connectWS((msg) => {
@@ -158,6 +133,7 @@ export function DroneProvider({ children }) {
         const incoming = msg.data.map((d) => ({ ...d, ts }))
 
         setLiveDrones(incoming)
+        // timeline range last 5 minutes
         setMinTs(ts - MIN_WINDOW_MS)
         setMaxTs(ts)
 
@@ -168,7 +144,7 @@ export function DroneProvider({ children }) {
       }
     })
 
-    return () => stopWS()
+    return () => stopWS(wsRef)
   }, [])
 
   return (
@@ -187,8 +163,6 @@ export function DroneProvider({ children }) {
         setCurrentTs,
         minTs,
         maxTs,
-        speed,
-        setSpeed,
 
         statusFilter,
         setStatusFilter,
@@ -197,8 +171,4 @@ export function DroneProvider({ children }) {
       {children}
     </DroneContext.Provider>
   )
-}
-
-export function useDrones() {
-  return useContext(DroneContext)
 }
